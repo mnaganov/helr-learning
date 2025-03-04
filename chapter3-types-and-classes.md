@@ -59,6 +59,8 @@ Rust: arrays `[]` (fixed size) and vectors `std::Vec` (dynamic)
 Haskell: `()`, length must be known because arity is part of the type
 Elisp: also lists, see https://www.codeproject.com/Articles/1186940/Lisps-Mysterious-Tuple-Problem
        However, for pairs, the "cons cell" representation is often used.
+       Note that it can't be used for storing two lists because lists are also
+       built from cons cells.
 Rust: `()`
 
 ## 3.6 Curried functions
@@ -235,8 +237,8 @@ True
 ```
 
 Elisp is more low level and contains several "equality" predicates. The
-predicate `eq` checks if two objects are the same object, while `equals` checks
-contents.  Note that `equals` returns `t` for `NaN`. There are also "numerical
+predicate `eq` checks if two objects are the same object, while `equal` checks
+contents.  Note that `equal` returns `t` for `NaN`. There are also "numerical
 comparison" functions `=` and `/=` (work only for numbers) and the predicate
 `eql` which works like `eq` but compares numbers both by type and value.
 
