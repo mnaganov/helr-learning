@@ -28,6 +28,14 @@ fac n = n * fac(n-1)
 
 **Note:** Don't forget that Elisp lacks tail recursion elimination.
 
+```rust
+>> fn fac(n: i32) -> i32 { match n { 0 => 1, _ => n * fac(n-1) } }
+>> fac(3)
+6
+>> fac(10)
+3628800
+```
+
 ## 6.2 Recursion on lists
 
 `chapter6-functions.hs`
@@ -117,6 +125,28 @@ second parameter which initially must be an empty list.
 (1 2 3 4)
 ```
 
+```rust
+>> fn product(l: &[i32]) -> i32 { match l { [] => 1, [n, ns @ ..] => n * product(ns) } }
+>> product(&[2,3,4])
+24
+
+>> fn lngth<T>(l: &[T]) -> usize { match l { [] => 0, [_, xs @ ..] => 1 + lngth(xs) } }
+>> lngth(&[1,2,3,4])
+4
+
+>> fn reverse<T: Clone>(l: Vec<T>) -> Vec<T> { if l.is_empty() { l } else { let mut v = l.to_vec(); let mut xs = reverse::<T>(v.split_off(1)); xs.extend(v); xs } }
+>> reverse(vec![1,2,3])
+[3, 2, 1]
+
+>> fn insert(x: i32, l: Vec<i32>) -> Vec<i32> { let mut r = vec![x]; if l.is_empty() { r } else {let mut y = l.to_vec(); let ys = y.split_off(1); if x <= y[0] { r.extend(y); r.extend(ys); r } else { y.extend(insert(x, ys)); y } } }
+>> insert(3, vec![1,2,4,5])
+[1, 2, 3, 4, 5]
+
+>> fn isort(l: Vec<i32>) -> Vec<i32> { if l.is_empty() { l } else { let mut x = l.to_vec(); let xs = x.split_off(1); insert(x[0], isort(xs)) } }
+>> isort(vec![3,2,1,4])
+[1, 2, 3, 4]
+```
+
 ## 6.3 Multiple arguments
 
 `chapter6-functions.hs`
@@ -151,6 +181,12 @@ drp n (_:xs) = drp (n-1) xs
   (if (or (= n 0) (eq l nil)) l
     (drop (1- n) (cdr l))))
 (concat (drop 3 '(?a ?b ?c ?d)))
+"d"
+```
+
+```rust
+>> fn drp<T>(n: i32, l: &[T]) -> &[T] { match (n, l) { (0, _) => l, (_, []) => &[], (n,[_, xs@..]) => drp(n-1, xs) } }
+>> drp(3, &['a','b','c','d']).iter().collect::<String>()
 "d"
 ```
 

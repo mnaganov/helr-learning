@@ -322,9 +322,15 @@ nil
                   (if (equal e x) (cons i l) l)) xs nil))))
 (positions nil '(t nil t nil))
 (1 3)
+
+(defun positions/indexed(x xs)
+  (seq-map 'cadr
+       (seq-filter (lambda (p) (equal x (car p)))
+                   (seq-map-indexed (lambda (e idx) (list e idx)) xs))))
 ```
 
-!!! seq-map-indexed !!!
+**Note:** The second version (`positions/indexed`) is closer in the spirit
+to its Haskell prototype.
 
 ```rust
 >> ['a','b','c'].iter().zip([1,2,3,4].iter()).collect::<Vec<_>>()
