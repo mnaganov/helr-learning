@@ -208,6 +208,8 @@ channel = id
 ```
 
 ```haskell
+> take 10 (iterate (*2) 1)
+[1,2,4,8,16,32,64,128,256,512]
 > bin2intZ [1,0,1,1]
 13
 > int2bin 13
@@ -284,4 +286,162 @@ winner' bs = case rank (rmempty bs) of
 ["Red","Blue","Green"]
 > winner' ballots
 "Green"
+```
+
+## 7.9 Exercises
+
+```haskell
+listcomp :: (a -> b) -> (a -> Bool) -> [a] -> [b]
+listcomp f p xs = map f (filter p xs)
+
+listcomp2 :: (a -> b) -> (a -> Bool) -> [a] -> [b]
+listcomp2 f p = map f . filter p
+
+> listcomp2 ord (== 'a') ['a', 'b', 'c', 'a']
+[97,97]
+
+allM :: (a -> Bool) -> [a] -> Bool
+allM p xs = and (map p xs)
+
+allM2 :: (a -> Bool) -> [a] -> Bool
+allM2 p = and . map p
+
+anyM :: (a -> Bool) -> [a] -> Bool
+anyM p xs = or (map p xs)
+
+anyM2 :: (a -> Bool) -> [a] -> Bool
+anyM2 p = or . map p
+
+takeWhileR :: (a -> Bool) -> [a] -> [a]
+takeWhileR _ []                 = []
+takeWhileR p (x:xs) | p x       = x : takeWhileR p xs
+                    | otherwise = []
+
+dropWhileR :: (a -> Bool) -> [a] -> [a]
+dropWhileR _ [] = []
+dropWhileR p (x:xs) | p x       = dropWhileR p xs
+                    | otherwise = x : xs
+
+mapF :: (a -> b) -> [a] -> [b]
+mapF f = foldr cf []
+          where cf x xs = f x : xs
+
+mapFL :: (a -> b) -> [a] -> [b]
+mapFL f = foldr (\x xs -> f x : xs) []
+
+filterF :: (a -> Bool) -> [a] -> [a]
+filterF p = foldr cp []
+             where cp x xs | p x       = x : xs
+                           | otherwise = xs
+
+filterFL :: (a -> Bool) -> [a] -> [a]
+filterFL p = foldr (\x xs -> if p x then x : xs else xs) []
+
+dec2int :: [Int] -> Int
+dec2int = foldl (\x y -> 10*x + y) 0
+
+> dec2int [2,3,4,5]
+2345
+
+myCurry :: ((a,b) -> c) -> (a -> b -> c)
+myCurry f = \x -> (\y -> f (x,y))
+
+myCurry2 :: ((a,b) -> c) -> (a -> b -> c)
+myCurry2 f = \x y -> f (x,y)
+
+plus :: Num a => (a,a) -> a
+plus (x,y) = x + y
+
+> plus (2,3)
+5
+> myCurry plus 2 3
+5
+
+myUncurry :: (a -> b -> c) -> ((a,b) -> c)
+myUncurry f = \(x,y) -> f x y
+
+> myUncurry add (2,3)
+5
+
+unfold :: (a -> Bool) -> (a -> b) -> (a -> a) -> a -> [b]
+unfold p h t x | p x       = []
+               | otherwise = h x : unfold p h t (t x)
+
+int2binU :: Int -> [Bit]
+int2binU = unfold (== 0) (`mod` 2) (`div` 2)
+
+chop8U :: [Bit] -> [[Bit]]
+chop8U = unfold (== []) (take 8) (drop 8)
+
+iterateU :: (a -> a) -> a -> [a]
+iterateU f = unfold (const False) id f
+
+mapU :: (a -> b) -> [a] -> [b]
+mapU f = unfold null (f . head) tail
+
+addParity :: [Bit] -> [Bit]
+addParity bits = bits ++ [(count 1 bits) `mod` 2]
+> addParity [1,0,1]
+[1,0,1,0]
+> addParity [1,1,1]
+[1,1,1,1]
+
+encodeP :: String -> [Bit]
+encodeP = concat . map (parity . make8 . int2bin . ord)
+> encodeP "abc"
+[1,0,0,0,0,1,1,0,1,0,1,0,0,0,1,1,0,1,1,1,0,0,0,1,1,0,0]
+
+chopN :: Int -> [Bit] -> [[Bit]]
+chopN _ [] = []
+chopN n bits = take n bits : chopN n (drop n bits)
+
+chop9 = chopN 9
+
+removeParity :: [Bit] -> [Bit]
+removeParity bits = if addParity bits' == bits then bits' else error "Parity error"
+                    where bits' = init bits
+> removeParity [1,0,1,0]
+[1,0,1]
+> removeParity [1,0,1,1]
+Main: Parity error
+
+decodeP :: [Bit] -> String
+decodeP = map (chr . bin2intF . removeParity) . chop9
+
+faultyChannel = tail
+
+> (decodeP . channel . encodeP) "abc"
+"abc"
+> (decodeP . faultyChannel . encodeP) "abc"
+Main: Parity error
+
+interleave :: a -> a -> [a]
+interleave x y = [x, y] ++ interleave x y
+
+altMap :: (a -> b) -> (a -> b) -> [a] -> [b]
+altMap f g = zipWith ($) (interleave f g)
+
+> altMap (+10) (+100) [0,1,2,3,4]
+[10,101,12,103,14]
+```
+
+**Note:** The symbol `$` denotes "function application operator": `f $ x = f x`.
+
+```haskell
+luhnDouble :: Int -> Int
+luhnDouble n = if 2 * n > 9 then 2 * n - 9 else 2 * n
+
+luhn :: [Int] -> Bool
+luhn ns = sum (altMap luhnDouble id ns) `mod` 10 == 0
+
+> luhn [1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4]
+True
+
+int2dec :: Int -> [Int]
+int2dec n = reverse (unfold (== 0) (`mod` 10) (`div` 10) n)
+
+> int2dec 1111222233334444
+[1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4]
+> luhn (int2dec 1111222233334444)
+True
 ```
