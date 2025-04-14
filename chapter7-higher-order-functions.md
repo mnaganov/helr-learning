@@ -23,6 +23,31 @@ twice f x = f (f x)
 [1,2,3]
 ```
 
+```elisp
+(defun add (x y)
+  (+ x y))
+(add 1 2)
+3
+
+(defun addL (x)
+  (lambda (y) (+ x y)))
+(addL 1)
+(closure ((x . 1)) (y) (+ x y))
+((addL 1) 2) ;; does not work
+(defalias 'addL1 (addL 1))
+(addL1 2)
+3
+
+(defun twice (f x)
+  (funcall f (funcall f x)))
+(twice 'addL1 3)
+5
+(twice (apply-partially '* 2) 3)
+12
+(twice 'reverse '(1 2 3))
+(1 2 3)
+```
+
 ## 7.2 Processing lists
 
 ```haskell
@@ -81,6 +106,42 @@ False
 [6,7]
 ```
 
+```elisp
+(defun my-map/r (f l)
+  (pcase l
+    ('() ())
+    (`(,x . ,xs) (cons (funcall f x) (my-map/r f xs)))))
+(my-map/r 'addL1 '(1 3 5 7))
+(2 4 6 8)
+(my-map/r 'even '(1 2 3 4))
+(nil t nil t)
+(my-map/r 'reverse '("abc" "def" "ghi"))
+("cba" "fed" "ihg")
+(my-map/r (apply-partially 'my-map/r 'addL1) '((1 2 3) (4 5)))
+((2 3 4) (5 6))
+```
+
+**Note:** Only the recursive version is implemented because there is no
+direct equvalent for Haskell generators in Elisp.
+
+```elisp
+(require 'dash)
+
+(defun sumsqreven (ns)
+  (-sum (my-map/r (lambda (x) (* x x)) (my-filter/r 'even ns))))
+(sumsqreven '(1 2 3 4 5))
+20
+
+(-all? 'even '(2 4 6 8))
+t
+(-any 'odd '(2 4 6 8))
+nil
+(seq-take-while 'even '(2 4 6 7 8))
+(2 4 6)
+(seq-drop-while 'odd '(1 3 5 6 7))
+(6 7)
+```
+
 ## 7.3 The `foldr` function
 
 ```haskell
@@ -132,6 +193,106 @@ reverseF :: [a] -> [a]
 reverseF = foldr snoc []
 ```
 
+```elisp
+(defun sum/sr (ns)
+  (seq-reduce '+ ns 0))
+(sum/sr '(1 2 3 4 5))
+15
+(defun sum/rf (ns)
+  (-reduce-from '+ 0 ns))
+(sum/rf '(1 2 3 4 5))
+15
+(defun sum/rd (ns)
+  (-reduce '+ ns))
+(sum/fd '(1 2 3 4 5))
+15
+(apply '+ '(1 2 3 4 5))
+15
+```
+
+**Note 1:** The direct analog of `foldl` is `seq-reduce`. There is also an
+equivalent `-reduce-from` from the `dash` package which only differs in the
+order of parameters. However, the implementation of `sum` and the following
+functions can use the first element of the list as the "initial value", thus
+they can also be implemented via `-reduce`, also from `dash`.
+
+**Note 2:** Since the function `+` in Elisp naturally takes arbitrary number of
+arguments, the same result can be achieved by using `apply` with it directly
+(the function `apply` uses the last parameter as a list of arguments).
+
+```elisp
+(defun product/sr (ns)
+  (seq-reduce '* ns 1))
+(product/sr '(1 2 3 4 5))
+120
+(defun product/rf (ns)
+  (-reduce-from '* 1 ns))
+(product/rf '(1 2 3 4 5))
+120
+(defun product/rd (ns)
+  (-reduce '* ns))
+(product/rd '(1 2 3 4 5))
+120
+(apply '* '(1 2 3 4 5))
+120
+
+(defalias 'or/f (lambda (a b) (or a b)))
+(defun or/sr (ns)
+  (seq-reduce 'or/f ns nil))
+(or/sr '(t nil t))
+t
+(defun or/rf (ns)
+  (-reduce-from 'or/f nil ns))
+(or/rf '(t nil t))
+t
+(defun or/rd (ns)
+  (-reduce 'or/f ns))
+(or/rd '(t nil t))
+t
+```
+
+**Note:** In Elisp, `or` and `and` are "special forms" because they evaluate
+their arguments "lazily". Because of that, neither can be used as a regular
+function (including the use with `apply`). We have defined an alias for a two
+parameter lambda which calls `or`.
+
+```elisp
+(defalias 'and/f (lambda (a b) (and a b)))
+(defun and/sr (ns)
+  (seq-reduce 'and/f ns t))
+(and/sr '(t nil t))
+nil
+(defun and/rf (ns)
+  (-reduce-from 'and/f t ns))
+(and/rf '(t nil t))
+nil
+(defun and/rd (ns)
+  (-reduce 'and/f ns))
+(and/rd '(t nil t))
+nil
+
+(defun foldr/r (f v l)
+  (pcase l
+    ('() v)
+    (`(,x . ,xs) (funcall f x (foldr/r f v xs)))))
+(defalias 'sum/frr (lambda (l) (foldr/r '+ 0 l)))
+(sum/frr '(1 2 3 4 5))
+15
+
+(defalias 'length/f (lambda (l) (foldr/r (lambda (_ n) (+ 1 n)) 0 l)))
+(length/f '(3 2 4 5 1))
+5
+
+(defun snoc (x xs)
+  (append xs (list x)))
+(snoc 3 '(1 2))
+(1 2 3)
+
+(defalias 'reverse/f (lambda (l) (foldr/r 'snoc nil l)))
+(reverse/f '(3 2 4 5 1))
+(1 5 4 2 3)
+```
+
 ## 7.4 The `foldl` function
 
 ```haskell
@@ -150,6 +311,31 @@ reverseL = foldl (\xs x -> x:xs) []
 foldlR :: (a -> b -> a) -> a -> [b] -> a
 foldlR f v [] = v
 foldlR f v (x:xs) = foldlR f (f v x) xs
+```
+
+```elisp
+(defun sumL (v l)
+  (pcase l
+    ('() v)
+    (`(,x . ,xs) (sumL (+ v x) xs))))
+(defun sum/l (l) (sumL 0 l))
+(sum/l '(1 2 3 4 5))
+15
+
+(defun foldl/r (f v l)
+  (pcase l
+    ('() v)
+    (`(,x . ,xs) (foldl/r f (funcall f v x) xs))))
+
+(defun length/l (l)
+  (foldl/r (lambda (n _) (+ n 1)) 0 l))
+(length/l '(3 2 4 5 1))
+5
+
+(defun reverse/l (l)
+  (foldl/r (lambda (xs x) (cons x xs)) nil l))
+(reverse/l '(3 2 4 5 1))
+(1 5 4 2 3)
 ```
 
 ## 7.5 The composition operator
