@@ -77,6 +77,16 @@
 15
 (seq-reduce #'+ '(1 2 3 4 5) 0)
 15
+(seq-reduce (function +) '(1 2 3 4 5) 0)
+15
+```
+
+**Note:** The syntax `#'` is a short hand for the `function` special
+form. This form informs the compiler that its argument is a function
+and can be byte-compiled. It also checks that the function actually
+exists.
+
+```elisp
 ;; from dash.el
 (-sum '(1 2 3 4 5))
 15

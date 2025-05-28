@@ -49,6 +49,28 @@ Lisp "efficient" addition of an element to the list (without copying the list)
 is only possible to the head of the list—this is called "consing on the
 list"—thus, the resulting list contans added elements in the reverse order.
 
+Note that there is `generator.el` package intended to help with defining
+generator functions. However, a generator function just emits value by value,
+it does not store them anywhere. Thus, in order to generate a list of numbers
+efficiently we need to do something like:
+
+```elisp
+(require 'generator)
+
+(iter-defun my-iter-rev (from to)
+  (dotimes (i (- (1+ to) from))
+    (iter-yield (- to i))))
+(let ((l nil))
+  (iter-do (i (my-iter-rev 1 5)) (setq l (cons i l)))
+  l)
+(1 2 3 4 5)
+```
+
+The benefit of generators is that they can be "endless", however since Elisp
+lacks "lazy evaluation", this does not help much. Concluding, since the code
+using `generator` is not very convenient or readable, we will just use
+`number-sequence` to emulate list comprehensions.
+
 ```elisp
 (seq-reduce (lambda (r x)
               (seq-reduce (lambda (l e) (cons (list x e) l)) '(5 4) r))
