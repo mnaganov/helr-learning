@@ -33,7 +33,9 @@ twice f x = f (f x)
   (lambda (y) (+ x y)))
 (addL 1)
 (closure ((x . 1)) (y) (+ x y))
-((addL 1) 2) ;; does not work
+((addL 1) 2) ;; does not work because the first term must be a function name
+(funcall (addL 1) 2)
+3
 (defalias 'addL1 (addL 1))
 (addL1 2)
 3
@@ -46,6 +48,22 @@ twice f x = f (f x)
 12
 (twice 'reverse '(1 2 3))
 (1 2 3)
+```
+
+```rust
+>> fn add(x: i32, y: i32) -> i32 { x + y }
+>> add(1, 2)
+3
+>> { let addL = move |x| {move |y| x+y}; addL(1)(2) }
+3
+
+>> fn twice<T, F>(f: F, x: T) -> T where F: Fn(T) -> T { f(f(x)) }
+>> twice(|x| { 2*x }, 3)
+12
+>> twice(|mut arr| { arr.reverse(); arr }, [1,2,3])
+[1, 2, 3]
+>> twice(|vec| { vec.into_iter().rev().collect() }, vec![1,2,3])
+[1, 2, 3]
 ```
 
 ## 7.2 Processing lists
@@ -119,10 +137,20 @@ False
 ("cba" "fed" "ihg")
 (my-map/r (apply-partially 'my-map/r 'addL1) '((1 2 3) (4 5)))
 ((2 3 4) (5 6))
+
+(defun filter/r (p l)
+  (pcase l
+    ('() ())
+    (`(,x . ,xs) (if (funcall p x) (cons x (filter/r p xs)) (filter/r p xs)))))
+(filter/r 'even (number-sequence 1 10))
+(2 4 6 8 10)
+(filter/r (lambda (x) (> x 5)) (number-sequence 1 10))
+(6 7 8 9 10)
 ```
 
-**Note:** Only the recursive version is implemented because there is no
-direct equvalent for Haskell generators in Elisp.
+**Note:** Only the recursive versions are implemented because there is no
+direct equvalent for Haskell generators in Elisp. See the note in
+[Chapter 5](chapter5-list-comprehensions.html) about `generator.el`.
 
 ```elisp
 (require 'dash)
@@ -140,6 +168,58 @@ nil
 (2 4 6)
 (seq-drop-while 'odd '(1 3 5 6 7))
 (6 7)
+```
+
+**Note:** In [Chapter 5](chapter5-list-comprehensions.html) we were using
+the function `map` for emulating list comprehensions in Rust. Since it is
+pointless to implement `map` via itself, we implemement it using `for` loop:
+
+```rust
+>> fn mapL<T, S, F>(f: F, xs: &[T]) -> Vec<S> where F: Fn(&T) -> S { let mut r: Vec<S> = Vec::with_capacity(xs.len()); for x in xs { r.push(f(x)); } r }
+>> mapL(|x| { 1+x }, &[1,3,5,7])
+[2, 4, 6, 8]
+
+>> mapL(even, &[1,2,3,4])
+[false, true, false, true]
+
+>> fn reverse_string_by_chars(s: &String) -> String { s.chars().rev().collect::<String>() }
+>> mapL(reverse_string_by_chars, &[String::from("abc"),String::from("def"),String::from("ghi")])
+["cba", "fed", "ihg"]
+```
+
+**Note:** Attempting to use `str` type for the argument of `reverse_string_by_chars`
+produces a compiler error: "the size for values of type `str` cannot be known at
+compilation time" which seems to be caused by our definition of the type of `F`.
+Similar thing happens if we attempt to use our `mapL` with nested lists:
+
+```rust
+>> mapL(|l| { mapL(|x| { 1+x }, l) }, [[1,2,3],[4,5,6]])
+[E0277] Error: the size for values of type `[_]` cannot be known at compilation time
+
+>> fn mapR<T: Clone, S, F>(f: F, v: &Vec<T>) -> Vec<S> where F: Fn(&T) -> S { if v.is_empty() { vec![] } else { let mut x = v.to_vec(); let xs = x.split_off(1); let mut r = vec![f(&x[0])]; r.extend(mapR(f, &xs)); r } }
+
+>> fn filterL<T: Copy, P>(p: P, xs: &[T]) -> Vec<T> where P: Fn(&T) -> bool { let mut r: Vec<T> = Vec::with_capacity(xs.len()); for x in xs { if p(x) { r.push(*x); } } r }
+
+>> filterL(even, &[1,2,3,4,5,6,7,8,9,10])
+[2, 4, 6, 8, 10]
+>> filterL(|&x| { x > 5 }, &[1,2,3,4,5,6,7,8,9,10])
+[6, 7, 8, 9, 10]
+
+>> fn filterR<T: Clone, P>(p: P, v: &Vec<T>) -> Vec<T> where P: Fn(&T) -> bool { if v.is_empty() { vec![] } else { let mut x = v.to_vec(); let xs = x.split_off(1); if p(&x[0]) { x.extend(filterR(p, &xs)); x } else { filterR(p, &xs) } } }
+>> filterR(|&x| { x > 5 }, &vec![1,2,3,4,5,6,7,8,9,10])
+
+>> fn sumsqreven(ns: &Vec<i32>) -> i32 { mapR(|x| { x*x }, &filterR(even, ns)).iter().sum::<i32>() }
+>> sumsqreven(&vec![1,2,3,4,5])
+20
+
+>> [2,4,6,8].iter().all(|x|{even(x)})
+true
+>> [2,4,6,8].iter().any(|x|{odd(x)})
+false
+>> [2,4,6,7,8].iter().take_while(|x|{even(x)}).collect::<Vec<_>>()
+[2, 4, 6]
+>> [1,3,5,6,7].iter().skip_while(|x|{odd(x)}).collect::<Vec<_>>()
+[6, 7]
 ```
 
 ## 7.3 The `foldr` function
@@ -293,6 +373,57 @@ nil
 (1 5 4 2 3)
 ```
 
+```rust
+>> fn sumf(ns: &[i32]) -> i32 { ns.iter().rfold(0, |acc, &x| acc + x) }
+>> sumf(&[1,2,3,4,5])
+15
+```
+
+**Note:** `rfold` is the right-associative version of `fold` which is
+left-associative.
+
+```rust
+>> fn productf(ns: &[i32]) -> i32 { ns.iter().rfold(1, |acc, &x| acc * x) }
+>> productf(&[1,2,3,4,5])
+120
+
+>> fn orf(bs: &[bool]) -> bool { bs.iter().rfold(false, |acc, &x| acc || x) }
+>> orf(&[true,false,true])
+true
+>> fn andf(bs: &[bool]) -> bool { bs.iter().rfold(true, |acc, &x| acc && x) }
+>> andf(&[true,false,true])
+false
+
+>> fn foldrR<T: Clone, S: Clone, F>(s: S, f: F, v: &Vec<T>) -> S where F: Fn(S, &T) -> S + Clone { if v.is_empty() { s } else { let mut x = v.to_vec(); let xs = x.split_off(1); f(foldrR(s, f.clone(), &xs), &x[0]) } }
+```
+
+**Note 1:** The function parameter must be cloneable because use of borrowing, as in
+`f(..., &f, ...)` creates infinite type recursion.
+**Note 2:** The order of arguments of the folding function matches the
+order used by Rust's `fold` and `rfold`, which is in reverse to the
+convention used by Haskell.
+
+```rust
+>> fn lengthf<T>(xs: &[T]) -> i32 { xs.iter().rfold(0, |acc, _| 1+acc) }
+>> lengthf(&[3,2,4,5,1])
+5
+
+>> fn lengthFR<T: Clone>(xs: &[T]) -> i32 { foldrR(0, |acc,_| 1+acc, &xs.to_vec()) }
+>> lengthFR::<i32>(&[])
+0
+>> lengthFR(&[3,2,4,5,1])
+5
+
+>> fn snoc<T: Clone>(x: &T, xs: &Vec<T>) -> Vec<T> { let mut v = xs.to_vec(); v.push(x.clone()); v }
+>> fn reverseS<T: Clone>(v: &Vec<T>) -> Vec<T> { if v.is_empty() { v.to_vec() } else { let mut x = v.to_vec(); let xs = x.split_off(1); snoc(&x[0], &reverseS(&xs)) } }
+>> reverseS(&vec![3,2,4,5,1])
+[1, 5, 4, 2, 3]
+
+>> fn reverseF<T: Clone>(v: &Vec<T>) -> Vec<T> { foldrR(vec![], move |acc,x| {snoc(&x, &acc)}, v) }
+>> reverseF(&vec![3,2,4,5,1])
+[1, 5, 4, 2, 3]
+```
+
 ## 7.4 The `foldl` function
 
 ```haskell
@@ -338,6 +469,27 @@ foldlR f v (x:xs) = foldlR f (f v x) xs
 (1 5 4 2 3)
 ```
 
+```rust
+>> fn sumL(v: &[i32]) -> i32 { fn sum(acc: i32, v: &[i32]) -> i32 { if v.is_empty() { acc } else { let mut x = v.to_vec(); let xs = x.split_off(1); sum(acc + &x[0], &xs) } } sum(0, v) }
+>> sumL(&[1,2,3,4,5])
+15
+
+>> fn lengthfl<T>(xs: &[T]) -> i32 { xs.iter().fold(0, |acc, _| 1+acc) }
+>> lengthfl(&[3,2,4,5,1])
+5
+
+>> fn foldlR<T: Clone, S: Clone, F>(s: S, f: F, v: &Vec<T>) -> S where F: Fn(S, &T) -> S + Clone { if v.is_empty() { s } else { let mut x = v.to_vec(); let xs = x.split_off(1); foldlR(f(s, &x[0]), f.clone(), &xs) } }
+>> fn lengthFL<T: Clone>(xs: &[T]) -> i32 { foldlR(0, |acc,_| 1+acc, &xs.to_vec()) }
+>> lengthFL::<i32>(&[])
+0
+>> lengthFL(&[3,2,4,5,1])
+5
+
+>> fn reverseFL<T: Clone>(v: &Vec<T>) -> Vec<T> { foldlR(vec![], |acc,x| { let mut v = vec![x.clone()]; v.extend(acc.iter().cloned()); v }, &v) }
+>> reverseFL(&vec![3,2,4,5,1])
+[1, 5, 4, 2, 3]
+```
+
 ## 7.5 The composition operator
 
 ```haskell
@@ -362,6 +514,7 @@ quadruple = compose [(*2), (*2)]
 (defun comp (f g)
   (lambda (x) (funcall f (funcall g x))))
 (funcall (comp '2* '1+) 1)
+4
 
 (defun id (x) x)
 id
@@ -379,6 +532,38 @@ id
 **Note:** Using the function composition function `comp` does not make the
 code more readable vs. normal nested function application when need to use
 `comp` via `funcall` or `apply`. However, use of `defalias` helps.
+
+```rust
+>> fn comp<A, B, C, F, G>(f: F, g: G) -> impl FnOnce(A) -> C where F: FnOnce(B) -> C, G: FnOnce(A) -> B { move |x: A| f(g(x)) }
+```
+
+This is the most generic implementation. Depending on the actual types of
+the closures passed in: `FnOnce`, `FnMut`, or `Fn`, the resulting closure
+will have the same implementation.
+
+```rust
+>> comp(|y|{2*y}, |x|{1+x})(&1)
+4
+
+>> fn id<T>(t: T) -> T { t }
+>> comp(|y|{2*y}, id)(&3)
+6
+
+>> fn compose<T: 'static>(v: Vec<Box<dyn FnOnce(T) -> T>>) -> Box<dyn FnOnce(T) -> T> { v.into_iter().rfold(Box::new(id),|acc,f| { Box::new(move |x| f(acc(x))) }) }
+>> fn quadruple(n: i32) -> i32 { compose::<i32>(vec![Box::new(|y|{2*y}),Box::new(|y|{2*y})])(n) }
+>> quadruple(3)
+12
+```
+
+**Note:** Since Rust is a more low-level language, more work is required from a
+programmer to express their intent. The closure trait `Fn(T) -> T` is just an
+"interface", and each concrete closure type created from it is different. This
+is why there is a need to put it into a `Box` (this is how "dynamic typing" is
+implemented in Rust). Potentially, `compose` can be changed to take function
+pointers `fn(T) -> T`, however since the accumulating function needs to return a
+closure, the return type of `compose` will still remain a closure. Using uniform
+`Box` type both for input and output parameters allows to use `compose` on its
+own results, which is a more uniform approach.
 
 ## 7.6 Binary string transmitter
 
@@ -491,7 +676,6 @@ channel = id
 
 ## 7.7 Voting algorithms
 
-`chapter7-functions.hs`
 ```haskell
 import Data.List
 
@@ -531,9 +715,7 @@ winner' :: Ord a => [[a]] -> a
 winner' bs = case rank (rmempty bs) of
               [c] -> c
               (c:cs) -> winner' (elim c bs)
-```
 
-```haskell
 λ> count "Red" votes
 2
 λ> rmdups votes

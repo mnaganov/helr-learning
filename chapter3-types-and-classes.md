@@ -19,7 +19,9 @@ Rust: `char` type, Unicode, stored as 32-bit word
 
 Haskell: `String` type
 Elisp: arrays of characters, fixed length, `stringp` test predicate
-Rust: `str` type, equivalent to an array of bytes, must contain valid UTF-8
+Rust: `String` type owns its contents, must contain valid UTF-8. `str` type
+is a view (string slice), equivalent to an array of bytes (`u8`), but still
+must be valid UTF-8.
 
 ### Fixed-precision integers
 
