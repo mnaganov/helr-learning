@@ -815,16 +815,10 @@ is impossible to nest `3` generators.
 >> perfects(500)
 [6, 28, 496]
 
->> fn find_all_in_vec(k: char, t: &Vec<(char, i32)>) -> Vec<i32> { let (els, vals): (Vec<_>, Vec<_>) = t.iter().filter(|(e,v)| k == *e).cloned().unzip(); vals }
->> fn positions_find(x: char, xs: &[char]) -> Vec<i32> { find_all_in_vec(x, &((0_i32..).zip(xs.clone().into_iter()).map(|(v,e)| (*e,v)).collect::<Vec<(char,i32)>>())) }
->> positions_find('a', &['b', 'a', 'b', 'a'])
+>> fn positions_find<T: PartialEq>(x: &T, xs: &[T]) -> Vec<usize> { xs.iter().zip(0..).filter_map(|(e, i)| if e == x { Some(i) } else { None }).collect() }
+>> positions_find(&false, &[true, false, true, false])
 [1, 3]
-```
 
-**Note:** It is not easy to turn an iterator into an array in Rust,
-thus we have to add `find_all_in_vec` which takes a vector.
-
-```rust
 >> fn scalarproduct(xs: &[i32], ys: &[i32]) -> i32 { xs.iter().zip(ys.iter()).map(|(x,y)| x*y).sum() }
 >> scalarproduct(&[1,2,3], &[4,5,6])
 32

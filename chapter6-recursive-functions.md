@@ -238,8 +238,8 @@ qsort (x:xs) = qsort smaller ++ [x] ++ qsort larger
 >> fib(10)
 55
 
->> fn qsort(v: &Vec<i32>) -> Vec<i32> { if (v.is_empty()) { vec![] } else { let mut x = v.to_vec(); let xs = x.split_off(1); let mut s = qsort(&xs.iter().filter(|a| a <= &&x[0]).cloned().collect::<Vec<i32>>()); s.extend(x.clone()); s.extend(qsort(&xs.iter().filter(|b| b > &&x[0]).cloned().collect::<Vec<i32>>())); s } }
->> qsort(&vec![3,1,2,5,4])
+>> fn qsort<T: Ord + Clone>(xs: &[T]) -> Vec<T> { if xs.is_empty() { vec![] } else { let x = &xs[0]; let (smaller, larger): (Vec<T>, Vec<T>) = xs[1..].iter().cloned().partition(|a| a <= x); let mut out = qsort(&smaller); out.push(x.clone()); out.extend(qsort(&larger)); out } }
+>> qsort(&[3,1,2,5,4])
 [1, 2, 3, 4, 5]
 ```
 
@@ -304,10 +304,10 @@ false
 **Note:** In `evcxr` specifically, there was a need to "break" the recursive definition loop. In a real program this should not be needed.
 
 ```rust
->> fn odds(v: &Vec<i32>) -> Vec<i32> { v.to_vec() }
->> fn evens(v: &Vec<i32>) -> Vec<i32> { if v.is_empty() { vec![] } else { let mut x = v.to_vec(); let xs = x.split_off(1); x.extend(odds(&xs)); x } }
->> fn odds(v: &Vec<i32>) -> Vec<i32> { if v.is_empty() { vec![] } else { let mut x = v.to_vec(); let xs = x.split_off(1); evens(&xs) } }
->> evens(&vec![1,2,3,4,5])
+>> fn odds(v: &[i32]) -> Vec<i32> { v.to_vec() }
+>> fn evens(v: &[i32]) -> Vec<i32> { if v.is_empty() { vec![] } else { let mut x = v.to_vec(); let xs = x.split_off(1); x.extend(&odds(&xs)[..]); x } }
+>> fn odds(v: &[i32]) -> Vec<i32> { if v.is_empty() { vec![] } else { let mut x = v.to_vec(); let xs = x.split_off(1); evens(&xs[..]) } }
+>> evens(&[1,2,3,4,5])
 [1, 3, 5]
 ```
 
@@ -573,20 +573,16 @@ false
 >> and(&[])
 false
 
->> fn concat<T: Clone>(v: &Vec<Vec<T>>) -> Vec<T> { if v.is_empty() { vec![] } else { let mut l = v.to_vec(); let ls = l.split_off(1); let mut r = l[0].to_vec(); r.extend(concat(&ls)); r } }
->> concat(&vec![vec![1,2], vec![3,4], vec![5]])
+>> fn concat<T: Clone>(lists: &[&[T]]) -> Vec<T> { if lists.is_empty() { vec![] } else { let mut result = lists[0].to_vec(); result.extend(concat(&lists[1..])); result } }
+>> concat(&[&[1, 2], &[3, 4], &[5]])
 [1, 2, 3, 4, 5]
->> concat(&vec![vec![1,2]])
+>> concat(&[&[1,2]])
 [1, 2]
->> concat(&vec![vec![0_i32; 0]; 0])
+>> concat(&[&[] as &[i32]])
 []
->> concat(&vec![vec![1]])
+>> concat(&[&[1]])
 [1]
-```
 
-**Note:** Need to use a trick to be able to define an empty vector of a particular type inline.
-
-```rust
 >> fn replicate<T: Copy>(n: i32, a: T) -> Vec<T> { if n == 0 { vec![] } else { let mut r = vec![a]; r.extend(replicate(n-1, a).into_iter()); r } }
 >> replicate(5, 2)
 [2, 2, 2, 2, 2]
@@ -603,35 +599,35 @@ true
 >> elem(&10, &[1,2,3,4,5])
 false
 
->> fn merge<T: std::cmp::PartialOrd + Clone>(a: &Vec<T>, b: &Vec<T>) -> Vec<T> { if b.is_empty() { a.to_vec() } else if a.is_empty() { b.to_vec() } else { let mut l = a.to_vec(); let ls = l.split_off(1); let mut m = b.to_vec(); let ms = m.split_off(1); if l[0] <= m[0] { l.extend(merge(&ls, &b)); l } else { m.extend(merge(&a, &ms)); m } } }
->> merge(&vec![0;0], &vec![1,3,4])
+fn merge<T: std::cmp::PartialOrd + Clone>(l: &[T], m: &[T]) -> Vec<T> { if l.is_empty() { m.to_vec() } else if m.is_empty() { l.to_vec() } else if l[0] <= m[0] { let mut res = vec![l[0].clone()]; res.extend(merge(&l[1..], m)); res } else { let mut res = vec![m[0].clone()]; res.extend(merge(l, &m[1..])); res } }
+>> merge(&[], &[1,3,4])
 [1, 3, 4]
->> merge(&vec![2], &vec![1,3,4])
+>> merge(&[2], &[1,3,4])
 [1, 2, 3, 4]
->> merge(&vec![2], &vec![1])
+>> merge(&[2], &[1])
 [1, 2]
->> merge(&vec![3,4], &vec![1,2,5])
+>> merge(&[3,4], &[1,2,5])
 [1, 2, 3, 4, 5]
->> merge(&vec![2,5,6], &vec![1,3,4])
+>> merge(&[2,5,6], &[1,3,4])
 [1, 2, 3, 4, 5, 6]
 
->> fn halve<T: Clone>(l: &Vec<T>) -> (Vec<T>,Vec<T>) { let n2 = l.len() / 2; let mut v = l.to_vec(); let v2 = v.split_off(n2); (v, v2) }
->> halve(&vec![0;0])
+>> fn halve<T: Clone>(l: &[T]) -> (Vec<T>,Vec<T>) { let n2 = l.len() / 2; let mut v = l.to_vec(); let v2 = v.split_off(n2); (v, v2) }
+>> halve(&[] as &[i32])
 ([], [])
->> halve(&vec![1])
+>> halve(&[1])
 ([], [1])
->> halve(&vec![1,2])
+>> halve(&[1,2])
 ([1], [2])
->> halve(&vec![1,2,3])
+>> halve(&[1,2,3])
 ([1], [2, 3])
 
->> fn msort<T: std::cmp::PartialOrd + Clone>(a: &Vec<T>) -> Vec<T> { if a.is_empty() { vec![] } else if a.len() == 1 { a.to_vec() } else { let lr = halve(a); merge(&msort(&lr.0), &msort(&lr.1)) } }
->> msort(&vec![0;0])
+>> fn msort<T: std::cmp::PartialOrd + Clone>(a: &[T]) -> Vec<T> { if a.is_empty() { vec![] } else if a.len() == 1 { a.to_vec() } else { let lr = halve(a); merge(&msort(&lr.0), &msort(&lr.1)) } }
+>> msort(&[] as &[i32])
 []
->> msort(&vec![1])
+>> msort(&[1])
 [1]
->> msort(&vec![2,1])
+>> msort(&[2,1])
 [1, 2]
->> msort(&vec![4,3,1,2,5])
+>> msort(&[4,3,1,2,5])
 [1, 2, 3, 4, 5]
 ```

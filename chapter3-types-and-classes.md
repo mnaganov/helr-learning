@@ -90,10 +90,10 @@ Unlike Haskell, both Elisp and Rust do not define multi-parameter functions
 via currying. That means, partial application is only possible by creating
 closures.
 
-Elisp has a helper function `apply-partially` which returns a new function
-that has some arguments bound to the specified values. It is possible to
-return a function from a function, however there is no automatic conversion
-of a multi-parameter function into a set of currying functions.
+Elisp has a helper function `apply-partially` which returns a new function that
+has some of its parameters bound to the specified values. It is possible to
+return a function from a function, however there is no automatic conversion of a
+multi-parameter function into a set of currying functions.
 
 ```elisp
 (defun add_m (a b) (+ a b))

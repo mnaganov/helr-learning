@@ -196,20 +196,21 @@ Similar thing happens if we attempt to use our `mapL` with nested lists:
 >> mapL(|l| { mapL(|x| { 1+x }, l) }, [[1,2,3],[4,5,6]])
 [E0277] Error: the size for values of type `[_]` cannot be known at compilation time
 
->> fn mapR<T: Clone, S, F>(f: F, v: &Vec<T>) -> Vec<S> where F: Fn(&T) -> S { if v.is_empty() { vec![] } else { let mut x = v.to_vec(); let xs = x.split_off(1); let mut r = vec![f(&x[0])]; r.extend(mapR(f, &xs)); r } }
+>> fn mapR<T: Clone, S, F>(f: F, v: &[T]) -> Vec<S> where F: Fn(&T) -> S { if v.is_empty() { vec![] } else { let mut r = vec![f(&v[0])]; r.extend(mapR(f, &v[1..])); r } }
 
 >> fn filterL<T: Copy, P>(p: P, xs: &[T]) -> Vec<T> where P: Fn(&T) -> bool { let mut r: Vec<T> = Vec::with_capacity(xs.len()); for x in xs { if p(x) { r.push(*x); } } r }
 
->> filterL(even, &[1,2,3,4,5,6,7,8,9,10])
+>> filterL(|x| even(*x), &std::array::from_fn::<_, 10, _>(|i| (i + 1) as i32))
 [2, 4, 6, 8, 10]
->> filterL(|&x| { x > 5 }, &[1,2,3,4,5,6,7,8,9,10])
+>> filterL(|&x| { x > 5 }, &std::array::from_fn::<_, 10, _>(|i| (i + 1) as i32))
 [6, 7, 8, 9, 10]
 
->> fn filterR<T: Clone, P>(p: P, v: &Vec<T>) -> Vec<T> where P: Fn(&T) -> bool { if v.is_empty() { vec![] } else { let mut x = v.to_vec(); let xs = x.split_off(1); if p(&x[0]) { x.extend(filterR(p, &xs)); x } else { filterR(p, &xs) } } }
->> filterR(|&x| { x > 5 }, &vec![1,2,3,4,5,6,7,8,9,10])
+>> fn filterR<T: Clone, P>(p: P, v: &[T]) -> Vec<T> where P: Fn(&T) -> bool { if v.is_empty() { vec![] } else { if p(&v[0]) { let mut r = vec![v[0].clone()]; r.extend(filterR(p, &v[1..])); r } else { filterR(p, &v[1..]) } } }
+>> filterR(|&x| { x > 5 }, &(1..=10).collect::<Vec<_>>())
+[6, 7, 8, 9, 10]
 
->> fn sumsqreven(ns: &Vec<i32>) -> i32 { mapR(|x| { x*x }, &filterR(even, ns)).iter().sum::<i32>() }
->> sumsqreven(&vec![1,2,3,4,5])
+>> fn sumsqreven(ns: &[i32]) -> i32 { mapR(|x| { x*x }, &filterR(|x| even(*x), ns)).iter().sum::<i32>() }
+>> sumsqreven(&[1,2,3,4,5])
 20
 
 >> [2,4,6,8].iter().all(|x|{even(x)})
@@ -394,12 +395,13 @@ true
 >> andf(&[true,false,true])
 false
 
->> fn foldrR<T: Clone, S: Clone, F>(s: S, f: F, v: &Vec<T>) -> S where F: Fn(S, &T) -> S + Clone { if v.is_empty() { s } else { let mut x = v.to_vec(); let xs = x.split_off(1); f(foldrR(s, f.clone(), &xs), &x[0]) } }
+>> fn foldrR<T: Clone, S: Clone, F>(s: S, f: F, v: &[T]) -> S where F: Fn(S, &T) -> S + Clone { if v.is_empty() { s } else { f(foldrR(s, f.clone(), &v[1..]), &v[0]) } }
 ```
 
-**Note 1:** The function parameter must be cloneable because use of borrowing, as in
-`f(..., &f, ...)` creates infinite type recursion.
-**Note 2:** The order of arguments of the folding function matches the
+**Note 1:** The function parameter must be cloneable, that's because use of
+borrowing, as in `f(..., &f, ...)` creates infinite type recursion.
+
+**Note 2:** The order of parameters of the folding function matches the
 order used by Rust's `fold` and `rfold`, which is in reverse to the
 convention used by Haskell.
 
@@ -408,19 +410,19 @@ convention used by Haskell.
 >> lengthf(&[3,2,4,5,1])
 5
 
->> fn lengthFR<T: Clone>(xs: &[T]) -> i32 { foldrR(0, |acc,_| 1+acc, &xs.to_vec()) }
+>> fn lengthFR<T: Clone>(xs: &[T]) -> i32 { foldrR(0, |acc,_| 1+acc, &xs) }
 >> lengthFR::<i32>(&[])
 0
 >> lengthFR(&[3,2,4,5,1])
 5
 
->> fn snoc<T: Clone>(x: &T, xs: &Vec<T>) -> Vec<T> { let mut v = xs.to_vec(); v.push(x.clone()); v }
->> fn reverseS<T: Clone>(v: &Vec<T>) -> Vec<T> { if v.is_empty() { v.to_vec() } else { let mut x = v.to_vec(); let xs = x.split_off(1); snoc(&x[0], &reverseS(&xs)) } }
->> reverseS(&vec![3,2,4,5,1])
+>> fn snoc<T: Clone>(x: &T, xs: &[T]) -> Vec<T> { let mut v = xs.to_vec(); v.push(x.clone()); v }
+>> fn reverseS<T: Clone>(v: &[T]) -> Vec<T> { if v.is_empty() { v.to_vec() } else { snoc(&v[0], &reverseS(&v[1..])) } }
+>> reverseS(&[3,2,4,5,1])
 [1, 5, 4, 2, 3]
 
->> fn reverseF<T: Clone>(v: &Vec<T>) -> Vec<T> { foldrR(vec![], move |acc,x| {snoc(&x, &acc)}, v) }
->> reverseF(&vec![3,2,4,5,1])
+>> fn reverseF<T: Clone>(v: &[T]) -> Vec<T> { foldrR(vec![], move |acc,x| {snoc(&x, &acc)}, v) }
+>> reverseF(&[3,2,4,5,1])
 [1, 5, 4, 2, 3]
 ```
 
@@ -478,15 +480,15 @@ foldlR f v (x:xs) = foldlR f (f v x) xs
 >> lengthfl(&[3,2,4,5,1])
 5
 
->> fn foldlR<T: Clone, S: Clone, F>(s: S, f: F, v: &Vec<T>) -> S where F: Fn(S, &T) -> S + Clone { if v.is_empty() { s } else { let mut x = v.to_vec(); let xs = x.split_off(1); foldlR(f(s, &x[0]), f.clone(), &xs) } }
->> fn lengthFL<T: Clone>(xs: &[T]) -> i32 { foldlR(0, |acc,_| 1+acc, &xs.to_vec()) }
+>> fn foldlR<T: Clone, S: Clone, F>(s: S, f: F, v: &[T]) -> S where F: Fn(S, &T) -> S + Clone { if v.is_empty() { s } else { foldlR(f(s, &v[0]), f.clone(), &v[1..]) } }
+>> fn lengthFL<T: Clone>(xs: &[T]) -> i32 { foldlR(0, |acc,_| 1+acc, &xs) }
 >> lengthFL::<i32>(&[])
 0
 >> lengthFL(&[3,2,4,5,1])
 5
 
->> fn reverseFL<T: Clone>(v: &Vec<T>) -> Vec<T> { foldlR(vec![], |acc,x| { let mut v = vec![x.clone()]; v.extend(acc.iter().cloned()); v }, &v) }
->> reverseFL(&vec![3,2,4,5,1])
+>> fn reverseFL<T: Clone>(v: &[T]) -> Vec<T> { foldlR(vec![], |acc,x| { let mut v = vec![x.clone()]; v.extend(acc.iter().cloned()); v }, &v) }
+>> reverseFL(&[3,2,4,5,1])
 [1, 5, 4, 2, 3]
 ```
 
@@ -529,17 +531,17 @@ id
 12
 ```
 
-**Note:** Using the function composition function `comp` does not make the
-code more readable vs. normal nested function application when need to use
-`comp` via `funcall` or `apply`. However, use of `defalias` helps.
+**Note:** Using the function composition function `comp` via `funcall` or
+`apply` does not make the code more readable vs. normal nested function
+application. However, use of `defalias` helps.
 
 ```rust
 >> fn comp<A, B, C, F, G>(f: F, g: G) -> impl FnOnce(A) -> C where F: FnOnce(B) -> C, G: FnOnce(A) -> B { move |x: A| f(g(x)) }
 ```
 
-This is the most generic implementation. Depending on the actual types of
-the closures passed in: `FnOnce`, `FnMut`, or `Fn`, the resulting closure
-will have the same implementation.
+**Note:** This is the most generic implementation. Depending on the actual types
+of the closure passed in as an argument: `FnOnce`, `FnMut`, or `Fn`, the
+resulting implementation of the closure will be the same.
 
 ```rust
 >> comp(|y|{2*y}, |x|{1+x})(&1)
@@ -555,15 +557,21 @@ will have the same implementation.
 12
 ```
 
-**Note:** Since Rust is a more low-level language, more work is required from a
-programmer to express their intent. The closure trait `Fn(T) -> T` is just an
-"interface", and each concrete closure type created from it is different. This
-is why there is a need to put it into a `Box` (this is how "dynamic typing" is
-implemented in Rust). Potentially, `compose` can be changed to take function
-pointers `fn(T) -> T`, however since the accumulating function needs to return a
-closure, the return type of `compose` will still remain a closure. Using uniform
-`Box` type both for input and output parameters allows to use `compose` on its
-own results, which is a more uniform approach.
+**Note 1:** Since Rust is a more low-level language than Haskell, more work is
+required from a programmer to express their intent. The closure trait `Fn(T) ->
+T` is just an "interface", and each concrete closure type created from it is
+different. This is why there is a need to put it into a `Box` (this is how
+"dynamic typing" is implemented in Rust). Potentially, `compose` can be changed
+to take function pointers `fn(T) -> T`, however since the accumulating function
+needs to return a closure, the return type of `compose` will still remain a
+closure. Using uniform `Box` type both for input and output parameters allows to
+use `compose` on its own results, which is a more uniform approach.
+
+**Note 2:** The resulting `compose` function is *homogenous*, that is, all
+functions must be `T -> T`. In order to write a *heterogenous* version of
+`compose`, we would need yet another level of indirection by putting all the
+types into `Any` and then up/downcasting them as needed. I guess, this is too
+much.
 
 ## 7.6 Binary string transmitter
 
@@ -672,6 +680,44 @@ channel = id
 (defalias 'transmit (compose '(decode channel encode)))
 (transmit "higher-order functions are easy")
 "higher-order functions are easy"
+```
+
+```rust
+>> std::iter::successors(Some(1), |x| Some(x * 2)).take(10).collect::<Vec<_>>()
+[1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+
+>> fn bin2intZ(xs: Vec<i32>) -> i32 { xs.iter().zip(std::iter::successors(Some(1), |x| Some(x * 2))).map(|(x,y)| x*y).sum() }
+>> bin2intZ(vec![1,0,1,1])
+13
+
+>> fn bin2intF(xs: Vec<i32>) -> i32 { xs.iter().rfold(0, |acc,x| x+2*acc) }
+>> bin2intF(vec![1,0,1,1])
+13
+
+>> fn int2bin(n: i32) -> Vec<i32> { if n == 0 { vec![] } else { let mut v = vec![n % 2]; v.extend(int2bin(n / 2)); v } }
+>> int2bin(13)
+[1, 0, 1, 1]
+
+>> fn make8(bits: Vec<i32>) -> Vec<i32> { bits.into_iter().chain(std::iter::repeat(0)).take(8).collect() }
+>> make8(int2bin(13))
+[1, 0, 1, 1, 0, 0, 0, 0]
+
+>> fn encode(s: &str) -> Vec<i32> { s.chars().map(|c| make8(int2bin(c as i32))).flatten().collect() }
+>> encode("abc")
+[1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0]
+
+>> fn chop8(bits: Vec<i32>) -> Vec<Vec<i32>> { if bits.is_empty() { vec![] } else { let mut b = bits.to_vec(); let rest = b.split_off(8); let mut v = vec![b]; v.extend(chop8(rest)); v }}
+>> chop8(encode("abc"))
+[[1, 0, 0, 0, 0, 1, 1, 0], [0, 1, 0, 0, 0, 1, 1, 0], [1, 1, 0, 0, 0, 1, 1, 0]]
+
+>> fn decode(bits: Vec<i32>) -> String { chop8(bits).into_iter().map(bin2intF).filter_map(|i| std::char::from_u32(i as u32)).collect() }
+>> decode(vec![1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0])
+"abc"
+
+>> fn channel<T>(t: T) -> T { id(t) }
+>> fn transmit(s: &str) -> String { decode(channel(encode(s))) }
+>> transmit("higher-order functions are not easy in Rust")
+"higher-order functions are not easy in Rust"
 ```
 
 ## 7.7 Voting algorithms
@@ -783,6 +829,61 @@ winner' bs = case rank (rmempty bs) of
     (`(,c . nil) c)
     (`(,c . ,cs) (winner/b (elim c bs)))))
 (winner/b ballots)
+"Green"
+```
+
+```rust
+>> let votes = vec!["Red", "Blue", "Green", "Blue", "Blue", "Red"];
+>> fn count<T: PartialEq>(x: &T, v: &[T]) -> usize { v.iter().filter(|e| *e == x).count() }
+>> count(&"Red", &votes)
+2
+```
+
+**Note:** Need to borrow "Red" to make `x` argument of type `&&str` to match the
+type `v` of `&[&str]`.
+
+```rust
+>> fn rmdups<T: PartialEq + Clone>(v: &[T]) -> Vec<T> { if v.is_empty() { vec![] } else { let mut x = v.to_vec(); let xs = x.split_off(1); let first = x[0].clone(); x.extend(rmdups(&xs).into_iter().filter(|e| e != &first)); x } }
+>> rmdups(&votes)
+["Red", "Blue", "Green"]
+
+>> fn rmdupsF<T: PartialEq + Clone>(v: &[T]) -> Vec<T> { let mut res = Vec::new(); for x in v { if !res.contains(x) { res.push(x.clone()); } } res }
+>> rmdupsF(&votes)
+["Red", "Blue", "Green"]
+
+>> fn result<T: Ord + Clone>(vs: &[T]) -> Vec<(usize,T)> { let mut s = rmdups(&vs).iter().map(|v| (count(v, vs),v.clone())).collect::<Vec<(usize,T)>>(); s.sort(); s }
+>> result(&votes)
+[(1, "Green"), (2, "Red"), (3, "Blue")]
+
+>> fn winner<T: Ord + Clone>(vs: &[T]) -> T { result(&vs).last().expect("").1.clone() }
+>> winner(&votes)
+"Blue"
+
+>> let ballots = vec![vec!["Red", "Green"], vec!["Blue"], vec!["Green", "Red", "Blue"], vec!["Blue", "Green", "Red"], vec!["Green"]];
+```
+
+**Note:** For fixed size array-of-arrays every element needs to have the same
+size. Because of that we need use either vectors or arrays of slices.
+
+```rust
+>> fn rmempty<T: Clone>(vs: &[Vec<T>]) -> Vec<Vec<T>> { vs.iter().filter_map(|v| if v.is_empty() {None} else {Some(v.to_vec())}).collect() }
+```
+
+**Note:** It would be nice to use `vs: &[&[T]]` but then we can not pass
+`ballots` into it because it is defined as vector of vectors, thus `&ballots`
+has type `&Vec<Vec<T>>`, which auto-derefs to `&[Vec<T>]`, not `&[&[T]]`.
+
+```rust
+>> fn elim<T: PartialEq + Clone>(x: &T, vs: &[Vec<T>]) -> Vec<Vec<T>> { vs.iter().map(|v| v.iter().filter(|e| *e != x).cloned().collect()).collect() }
+>> elim(&"Red", &ballots)
+[["Green"], ["Blue"], ["Green", "Blue"], ["Blue", "Green"], ["Green"]]
+
+>> fn rank<T: Ord + Clone>(vs: &[Vec<T>]) -> Vec<T> { result(&vs.iter().map(|v| v.first().expect("").clone()).collect::<Vec<T>>()).into_iter().map(|p| p.1).collect() }
+>> rank(&ballots)
+["Red", "Blue", "Green"]
+
+>> fn winnerB<T: Ord + Clone>(bs: &[Vec<T>]) -> T { match rank(&rmempty(bs)).as_slice() { [] => panic!(), [c] => c.clone(), [c, _cs @ ..] => winnerB(&elim(c, &bs)) } }
+>> winnerB(&ballots)
 "Green"
 ```
 
