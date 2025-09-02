@@ -176,7 +176,7 @@ pointless to implement `map` via itself, we implemement it using `for` loop:
 
 ```rust
 >> fn mapL<T, S, F>(f: F, xs: &[T]) -> Vec<S> where F: Fn(&T) -> S { let mut r: Vec<S> = Vec::with_capacity(xs.len()); for x in xs { r.push(f(x)); } r }
->> mapL(|x| { 1+x }, &[1,3,5,7])
+>> mapL(|x| 1+x, &[1,3,5,7])
 [2, 4, 6, 8]
 
 >> mapL(even, &[1,2,3,4])
@@ -193,7 +193,7 @@ compilation time" which seems to be caused by our definition of the type of `F`.
 Similar thing happens if we attempt to use our `mapL` with nested lists:
 
 ```rust
->> mapL(|l| { mapL(|x| { 1+x }, l) }, [[1,2,3],[4,5,6]])
+>> mapL(|l| { mapL(|x| 1+x, l) }, [[1,2,3],[4,5,6]])
 [E0277] Error: the size for values of type `[_]` cannot be known at compilation time
 
 >> fn mapR<T: Clone, S, F>(f: F, v: &[T]) -> Vec<S> where F: Fn(&T) -> S { if v.is_empty() { vec![] } else { let mut r = vec![f(&v[0])]; r.extend(mapR(f, &v[1..])); r } }
@@ -487,10 +487,14 @@ foldlR f v (x:xs) = foldlR f (f v x) xs
 >> lengthFL(&[3,2,4,5,1])
 5
 
->> fn reverseFL<T: Clone>(v: &[T]) -> Vec<T> { foldlR(vec![], |acc,x| { let mut v = vec![x.clone()]; v.extend(acc.iter().cloned()); v }, &v) }
+>> fn reverseFL<T: Clone>(v: &[T]) -> Vec<T> { foldlR(vec![], |mut acc,x| { acc.insert(0, x.clone()); acc }, &v) }
 >> reverseFL(&[3,2,4,5,1])
 [1, 5, 4, 2, 3]
 ```
+
+**Note:** For the case when the element is "consed onto" unchanged accumulator,
+it is more ergonomic to explicitly mark the accumulator as mutable and use
+`insert` method.
 
 ## 7.5 The composition operator
 
@@ -1137,7 +1141,11 @@ nil
                                     (apply-partially 'nthcdr 8)))
 (chop8/u (encode "abc"))
 ((1 0 0 0 0 1 1 0) (0 1 0 0 0 1 1 0) (1 1 0 0 0 1 1 0))
+```
 
+**Note:** Did not implement `iterate/u` because it assumes "lazy" evaluation.
+
+```elisp
 (defun map/u (f x) (unfold 'null
                            (lambda (x) (funcall f (car x)))
                            'cdr x))
@@ -1204,3 +1212,149 @@ t
 (luhn (int2dec 1111222233334444))
 t
 ```
+
+```rust
+>> fn listcomp<F, P, T: Clone, S>(f: F, p: P, xs: &[T]) -> Vec<S> where F: Fn(&T)->S, P: Fn(&T)->bool { xs.iter().filter(|x| p(x)).map(|x| f(x)).collect() }
+>> listcomp(|c| *c as i32, |c| *c == 'a', &['a','b','c','a'])
+[97, 97]
+```
+
+**Note:** Using `p` and `f` directly as arguments to `filter` and `map` is not
+correct because the filtering function receives an element of type `&&T`:
+`iter()` yields `&T` and `filter` expects that the predicates take a reference
+again. Unlike C++, in Rust multiple references do not collapse, instead they
+behave more like the "pointer" types from C++ because references also track the
+depth of borrowing.
+
+```rust
+>> fn allM<P, T>(p: P, xs: &[T]) -> bool where P: Fn(&T)->bool { xs.iter().map(|x| p(x)).rfold(true, |acc,x| acc && x) }
+>> allM(|x| even(*x), &[2, 4, 6, 8])
+true
+```
+
+Note:** Unlike the standard `all`, our implementation is not "lazy".
+
+```rust
+>> fn anyM<P, T>(p: P, xs: &[T]) -> bool where P: Fn(&T)->bool { xs.iter().map(|x| p(x)).rfold(false, |acc,x| acc || x) }
+>> anyM(|x| odd(*x), &[2, 4, 6, 8])
+false
+
+>> fn takeWhileR<P, T: Clone>(p: P, xs: &[T]) -> Vec<T> where P: Fn(&T)->bool { if xs.is_empty() || !p(&xs[0]) { vec![] } else { let mut r = vec![xs[0].clone()]; r.extend(takeWhileR(p, &xs[1..])); r }}
+>> takeWhileR(|x| even(*x), &[2,4,6,7,8])
+[2, 4, 6]
+
+>> fn dropWhileR<P, T: Clone>(p: P, xs: &[T]) -> Vec<T> where P: Fn(&T)->bool { if xs.is_empty() { vec![] } else if p(&xs[0]) { dropWhileR(p, &xs[1..]) } else { xs.to_vec() }}
+>> dropWhileR(|x| odd(*x), &[1,3,5,6,7])
+[6, 7]
+
+>> fn mapF<F,T,S>(f: F, xs: &[T]) -> Vec<S> where F: Fn(&T)->S { xs.iter().rfold(vec![], |mut acc,x| { acc.insert(0, f(x)); acc }) }
+>> mapF(|x| 1+x, &[1,2,3,4,5])
+[2, 3, 4, 5, 6]
+
+>> fn filterF<P,T:Clone>(p: P, xs: &[T]) -> Vec<T> where P: Fn(&T)->bool { xs.iter().rfold(vec![], |mut acc,x| { if p(x) { acc.insert(0, x.clone()); } acc }) }
+>> filterF(|x| odd(*x), &[1,2,3,4,5])
+[1, 3, 5]
+
+>> fn dec2int(n: &[i32]) -> i32 { n.iter().fold(0, |acc, x| acc*10+x) }
+>> dec2int(&[2,3,4,5])
+2345
+
+>> fn curry<F, A, B, C>(f: F) -> impl Fn(A) -> Box<dyn Fn(B) -> C + 'static> where F: Fn(A, B) -> C + Copy + 'static, A: Copy + 'static, B: Copy + 'static, C: 'static, { move |x: A| { let f = f; Box::new(move |y: B| f(x, y)) } }
+>> { let plus=|a,b| a+b; curry(plus)(2)(3) }
+5
+```
+
+**Note:** It is not allowed to specify `impl Fn(A) -> impl Fn(B) -> C` as the
+return type for `curry` because Rust does not allow nested `impl` trait
+types. Thus, we have to return the lambda as a dynamic type (*boxed closure*). For
+the parameters, since the closure captures data, we need to either copy it, or
+say that it has program's lifetime (`static`). We also require `Copy` because we
+move it into inner closures.
+
+```rust
+>> fn uncurry<F,A,B,C>(f: F) -> impl Fn(A, B) -> C where F: Fn(A) -> Box<dyn Fn(B) -> C> { move |x,y| f(x)(y) }
+>> { let plus=|a,b| a+b; uncurry(curry(plus))(2, 3) }
+5
+
+>> fn unfold<P,H,T,A,B>(p: P, h: H, t: T, x: A) -> Vec<B> where P: Fn(&A)->bool, H: Fn(&A)->B, T: Fn(A)->A { if p(&x) { vec![] } else { let mut r = vec![h(&x)]; let tx = t(x); r.extend(unfold(p, h, t, tx)); r } }
+```
+
+**Note:** In `unfold`, we could not write the recursive call as `unfold(p, h, t,
+t(x))` because while creating arguments to this call, the function objects are
+*moved*, and this make it impossible to use `t` for evaluating `t(x)`. This is
+why we evaluate it before making the recursive call. An alternative would be to
+pass `t` by reference: `t: &T`, but this is not aligned with `p` and `h`.
+
+```rust
+>> fn int2binU(n: i32) -> Vec<i32> { unfold(|x| *x == 0, |x| x % 2, |x| x / 2, n) }
+>> int2binU(13)
+[1, 0, 1, 1]
+>> fn chop8U(bits: Vec<i32>) -> Vec<Vec<i32>> { unfold(|v| v.is_empty(), |v| v[0..8].to_vec(), |v| { let mut r = v.to_vec(); r.split_off(8) }, bits) }
+>> chop8U(encode("abc"))
+[[1, 0, 0, 0, 0, 1, 1, 0], [0, 1, 0, 0, 0, 1, 1, 0], [1, 1, 0, 0, 0, 1, 1, 0]]
+```
+
+**Note:** Did not implement `iterateU` because it assumes "lazy" evaluation.
+
+```rust
+>> fn mapU<F,T: Clone,S>(f: F, xs: &[T]) -> Vec<S> where F: Fn(&T)->S { unfold(|v| v.is_empty(), |v| f(&v[0]), |v| { &v[1..] }, xs) }
+>> mapU(|x| 1+x, &[1,2,3,4,5])
+[2, 3, 4, 5, 6]
+
+>> fn encodeP(s: &str) -> Vec<i32> { s.chars().map(|c| addParity(make8(int2bin(c as i32)))).flatten().collect() }
+>> encodeP("abc")
+[1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0]
+
+>> fn addParity(mut bits: Vec<i32>) -> Vec<i32> { bits.extend(vec![count(&1, &bits) as i32 % 2]); bits }
+>> addParity(vec![1,0,1])
+[1, 0, 1, 0]
+>> addParity(vec![1,1,1])
+[1, 1, 1, 1]
+
+>> fn chopN(n: usize, bits: Vec<i32>) -> Vec<Vec<i32>> { if bits.is_empty() { vec![] } else { let k = bits.len().min(n); let mut v = vec![bits[0..k].to_vec()]; v.extend(chopN(n, bits[k..].to_vec())); v }}
+>> fn chop9(bits: Vec<i32>) -> Vec<Vec<i32>> { chopN(9, bits) }
+```
+
+**Note:** `chopN` handles correctly the case when the length of the input vector
+is not a multiple of `n`.
+
+```rust
+>> fn removeParity(mut bits: Vec<i32>) -> Vec<i32> { let bitsI = init(&bits).to_vec(); if addParity(bitsI) == bits { bits.split_off(bits.len()-1); bits } else { panic!("Parity error") } }
+>> removeParity(vec![1,0,1,0])
+[1, 0, 1]
+>> removeParity(vec![1,1,1,1])
+[1, 1, 1]
+>> removeParity(vec![1,1,1,0])
+>panics<
+```
+
+**Note:** Since we have decided to implement `addParity` in a way where it
+modifies its argument, the implementation of `removeParity` is slightly
+different from the Haskell version.
+
+```rust
+>> fn decodeP(bits: Vec<i32>) -> String { chop9(bits).into_iter().map(|b| bin2intF(removeParity(b))).filter_map(|i| std::char::from_u32(i as u32)).collect() }
+
+>> fn faultyChannel(mut bits: Vec<i32>) -> Vec<i32> { bits[1..].to_vec() }
+>> faultyChannel(vec![0,1,0,1])
+[1, 0, 1]
+
+>> fn transmitP(s: &str) -> String { decodeP(channel(encodeP(s))) }
+>> transmitP("test")
+"test"
+>> fn transmitF(s: &str) -> String { decodeP(faultyChannel(encodeP(s))) }
+>> transmitF("test")
+thread '<unnamed>' panicked at src/lib.rs:62:159:
+Parity error
+
+>> fn altMap<F,G,T,S>(f: F, g: G, xs: &[T]) -> Vec<S> where F: Fn(&T)->S, G: Fn(&T)->S { let mut first = false; xs.iter().map(|x| { first = !first; if first { f(x) } else { g(x) } }).collect() }
+>> altMap(|x| 10+x, |x| 100+x, &[0,1,2,3,4])
+[10, 101, 12, 103, 14]
+>> fn luhnDouble(n: i32) -> i32 { if 2*n > 9 { 2*n-9 } else { 2*n } }
+>> fn luhn(ns: &[i32]) -> bool { altMap(|x| luhnDouble(*x), |x| *x, ns).iter().sum::<i32>() % 10 == 0 }
+>> luhn(&[1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4])
+true
+```
+
+**Note:** Since arbitrary-precision integers are only available in Rust via
+non-standard packages, skip the last exercise.
